@@ -1,0 +1,9 @@
+*.exe
+*.out
+*.ilk
+*.pdb
+*.dYSM
+
+.vscode
+
+.DS_Store
