@@ -40,32 +40,32 @@ struct ReturnType<R(Args...)> {
 };
 
 template <std::size_t N>
-struct PlaceHolder {
+struct Placeholder {
     static constexpr std::size_t value{N};
 };
 
 template <typename T>
-struct IsPlaceHolder : std::false_type {};
+struct IsPlaceholder : std::false_type {};
 
 template <std::size_t N>
-struct IsPlaceHolder<PlaceHolder<N>> : std::true_type {};
+struct IsPlaceholder<Placeholder<N>> : std::true_type {};
 
 template <typename T>
-constexpr bool isPlaceHolder = IsPlaceHolder<std::remove_cvref_t<T>>::value;
+constexpr bool isPlaceholder = IsPlaceholder<std::remove_cvref_t<T>>::value;
 
 template <typename... Args>
-constexpr bool hasPlaceHolder = (... || isPlaceHolder<Args>);
+constexpr bool hasPlaceholder = (... || isPlaceholder<Args>);
 
 namespace placeholders {
-constexpr PlaceHolder<0> _;
-constexpr PlaceHolder<1> _1;
-constexpr PlaceHolder<2> _2;
-constexpr PlaceHolder<3> _3;
-constexpr PlaceHolder<4> _4;
-constexpr PlaceHolder<5> _5;
-constexpr PlaceHolder<6> _6;
-constexpr PlaceHolder<7> _7;
-constexpr PlaceHolder<8> _8;
+constexpr Placeholder<0> _;
+constexpr Placeholder<1> _1;
+constexpr Placeholder<2> _2;
+constexpr Placeholder<3> _3;
+constexpr Placeholder<4> _4;
+constexpr Placeholder<5> _5;
+constexpr Placeholder<6> _6;
+constexpr Placeholder<7> _7;
+constexpr Placeholder<8> _8;
 }  // namespace placeholders
 
 template <typename T>
@@ -86,13 +86,13 @@ auto translateGenericPlaceholder() {
 
 template <std::size_t N, typename Arg1, typename... Args>
 auto translateGenericPlaceholder(Arg1&& arg1, Args&&... args) {
-    if constexpr (std::is_same_v<std::remove_cvref_t<Arg1>, PlaceHolder<0>>) {
+    if constexpr (std::is_same_v<std::remove_cvref_t<Arg1>, Placeholder<0>>) {
         return std::tuple_cat(
-            std::tuple{PlaceHolder<N>{}},
+            std::tuple{Placeholder<N>{}},
             translateGenericPlaceholder<N + 1>(std::forward<Args>(args)...));
     } else {
         static_assert(
-            !isPlaceHolder<Arg1>,
+            !isPlaceholder<Arg1>,
             "Generic placeholder cannot be used with common placeholder.");
         return std::tuple_cat(
             std::tuple{std::forward<Arg1>(arg1)},
@@ -101,7 +101,7 @@ auto translateGenericPlaceholder(Arg1&& arg1, Args&&... args) {
 }
 
 template <typename R, typename... Args>
-    requires(!hasPlaceHolder<Args...>)
+    requires(!hasPlaceholder<Args...>)
 class Function<R(Args...)> {
 public:
     template <typename F>
@@ -120,13 +120,13 @@ public:
     }
 
     template <typename... BindArgs>
-        requires(hasPlaceHolder<BindArgs...>)
+        requires(hasPlaceholder<BindArgs...>)
     auto operator()(BindArgs&&... args) {
         static_assert(sizeof...(BindArgs) == sizeof...(Args));
         static_assert((... && (std::convertible_to<BindArgs, Args> ||
-                               isPlaceHolder<BindArgs>)));
+                               isPlaceholder<BindArgs>)));
         if constexpr ((... || (std::is_same_v<std::remove_cvref_t<BindArgs>,
-                                              PlaceHolder<0>>))) {
+                                              Placeholder<0>>))) {
             return makeBinder(*this, translateGenericPlaceholder<1>(
                                          std::forward<BindArgs>(args)...));
         } else {
@@ -147,25 +147,15 @@ struct Binder {
 
     using R = typename ReturnType<F>::type;
 
-    template <typename... BoundedArgs>
-    struct ArgMap {
-        std::tuple<BoundedArgs...> boundedArgs_;
-
-        template <typename T>
-        constexpr decltype(auto) map(T&& t) {
-            if constexpr (isPlaceHolder<T>) {
-                constexpr std::size_t phIdx = std::remove_cvref_t<T>::value;
-                static_assert(phIdx != 0);
-                return std::get<phIdx - 1>(std::move(boundedArgs_));
-            } else {
-                return std::forward<T>(t);
-            }
+    template <typename... CallArgs, typename T>
+    constexpr decltype(auto) map(std::tuple<CallArgs...> callArgs, T&& t) {
+        if constexpr (isPlaceholder<T>) {
+            constexpr std::size_t phIdx = std::remove_cvref_t<T>::value;
+            static_assert(phIdx != 0);
+            return std::get<phIdx - 1>(std::move(callArgs));
+        } else {
+            return std::forward<T>(t);
         }
-    };
-
-    template <std::size_t N>
-    constexpr decltype(auto) get(std::integral_constant<std::size_t, N>) {
-        return std::get<N>(args_);
     }
 
     template <typename... CallArgs>
@@ -176,8 +166,8 @@ struct Binder {
 
     template <typename... CallArgs, std::size_t... Idx>
     R invoke(std::index_sequence<Idx...>, CallArgs&&... cArgs) {
-        return f_((ArgMap<CallArgs...>{{std::forward<CallArgs>(cArgs)...}}.map(
-            get(std::integral_constant<std::size_t, Idx>{})))...);
+        return f_(map(std::tuple<CallArgs...>{std::forward<CallArgs>(cArgs)...},
+                      std::get<Idx>(args_))...);
     }
 };
 
